@@ -71,6 +71,18 @@ class SingleQubitTSP:
         # For simulation, we can model the 'strength' alpha as a projection
         return np.outer(target_state, current_state.conj())
 
+    def cost_function(self, params):
+        """Calculates the expected cost for the given parameters."""
+        # Use normalized_B if available for better convergence, else B
+        matrix = getattr(self, 'normalized_B', self.B)
+        total_dist = 0
+        for i in range(self.n):
+            row = params[i]
+            weights = np.exp(row - np.max(row))
+            weights /= np.sum(weights)
+            total_dist += np.sum(weights * matrix[i])
+        return total_dist
+
     def solve_spsa(self, iterations=100, a=0.1, c=0.01):
         """Simultaneous Perturbation Stochastic Approximation to find optimal path."""
         num_cities = self.n
@@ -202,6 +214,75 @@ class SingleQubitTSP:
         path_probabilities.sort(key=lambda x: x[1], reverse=True)
         return path_probabilities
 
+    def normalize_distances(self):
+        """Scales distances to [0, pi/2] for optimal Bloch sphere distribution."""
+        min_val = np.min(self.B[self.B > 0]) # Ignore self-loops
+        max_val = np.max(self.B)
+        # Map to range [0.1, 1.4] radians to stay away from extreme poles
+        self.normalized_B = 0.1 + (self.B - min_val) * (1.3 / (max_val - min_val))
+        np.fill_diagonal(self.normalized_B, 0)
+
+    def get_spsa_params(self, k, a=0.1, c=0.01, A=10):
+        """Calculates decaying step sizes according to paper's logic."""
+        ak = a / (k + 1 + A)**0.602
+        ck = c / (k + 1)**0.101
+        return ak, ck
+
+    def update_with_momentum(self, params, grad, momentum, beta=0.9, ak=0.01):
+        """Applies momentum-based update to the parameters."""
+        momentum = beta * momentum + (1 - beta) * grad
+        params = params - ak * momentum
+        return params, momentum     
+    
+    def decode_path(self, weights_matrix):
+        """Greedy decoding to ensure a valid TSP cycle is returned."""
+        n = self.n
+        path = [0]
+        visited = {0}
+        for _ in range(n - 1):
+            curr = path[-1]
+            # Sort potential next cities by weight (highest first)
+            probs = weights_matrix[curr]
+            options = np.argsort(-probs)
+            for opt in options:
+                if opt not in visited:
+                    path.append(opt)
+                    visited.add(opt)
+                    break
+        path.append(0)
+        return path
+    
+    def solve_refined(self, trials=5, iterations=500):
+        self.normalize_distances()
+        best_global_path = None
+        min_global_dist = float('inf')
+
+        for trial in range(trials):
+            # Initialize random weights for edges
+            params = np.random.randn(self.n, self.n) * 0.1
+            momentum = np.zeros_like(params)
+            
+            for k in range(iterations):
+                ak, ck = self.get_spsa_params(k)
+                delta = np.random.choice([-1, 1], size=params.shape)
+                
+                # Estimate gradients
+                f_plus = self.cost_function(params + ck * delta)
+                f_minus = self.cost_function(params - ck * delta)
+                grad = (f_plus - f_minus) / (2 * ck * delta)
+                
+                # Update
+                params, momentum = self.update_with_momentum(params, grad, momentum, ak=ak)
+            
+            # Check this trial's result
+            trial_path = self.decode_path(params)
+            trial_dist = sum(self.B[trial_path[i]][trial_path[i+1]] for i in range(self.n))
+            
+            if trial_dist < min_global_dist:
+                min_global_dist = trial_dist
+                best_global_path = trial_path
+                
+        return best_global_path, min_global_dist
 
 # --- Example Usage ---
 test_cases = [
@@ -226,6 +307,11 @@ for name, matrix in test_cases:
     for p, prob in path_probs[:3]:
         cost = sum(solver.B[p[i]][p[i+1]] for i in range(len(p)-1))
         print(f"  Path: {' -> '.join(map(str, p))} | Prob: {prob:.4e} | Cost: {cost}")
+
+    print("Solving with Refined SPSA...")
+    refined_path, refined_cost = solver.solve_refined(trials=3, iterations=1000)
+    print(f"Refined Path: {' -> '.join(map(str, refined_path))}")
+    print(f"Refined Cost: {refined_cost}")
 
     print("Calculating exact solution (Brute Force)...")
     bf_path, bf_cost = solver.solve_brute_force()
