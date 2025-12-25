@@ -1,0 +1,233 @@
+import numpy as np
+import sys
+import matplotlib.pyplot as plt
+import itertools
+
+
+import numpy as np
+
+# 1. Four-City Symmetric TSP (Example from Fig. 4)
+# The paper uses this to demonstrate the basic functionality.
+dist_4_city = [
+    [0, 10, 15, 20],
+    [10, 0, 35, 25],
+    [15, 35, 0, 30],
+    [20, 25, 30, 0]
+]
+# Result: Optimal path c1 -> c2 -> c4 -> c3 -> c1 (Total Dist: 80)
+
+# 2. Five-City Asymmetric TSP (Eq. 17 in Appendix A)
+# In asymmetric TSP, distance(i,j) != distance(j,i).
+dist_5_asymmetric = [
+    [0, 10, 8, 9, 7],
+    [10, 0, 10, 5, 6],
+    [8, 10, 0, 8, 9],
+    [9, 5, 8, 0, 6],
+    [7, 6, 9, 6, 0]
+]
+# Result: Optimal path c1 -> c3 -> c4 -> c2 -> c5 -> c1 (Total Dist: 34)
+
+# 3. Eight-City Symmetric TSP (Eq. 18 in Appendix A)
+# This is one of the complex cases solved in Figure 6.
+dist_8_city = [
+    [0, 15, 10, 20, 12, 18, 14, 22],
+    [15, 0, 16, 25, 13, 11, 21, 19],
+    [10, 16, 0, 30, 17, 24, 15, 28],
+    [20, 25, 30, 0, 22, 14, 16, 12],
+    [12, 13, 17, 22, 0, 26, 18, 14],
+    [18, 11, 24, 14, 26, 0, 12, 10],
+    [14, 21, 15, 16, 18, 12, 0, 17],
+    [22, 19, 28, 12, 14, 10, 17, 0]
+]
+# Paper Result: c2 -> c8 -> c6 -> c4 -> c3 -> c7 -> c5 -> c1 -> c2
+
+class SingleQubitTSP:
+    def __init__(self, cost_matrix):
+        self.B = np.array(cost_matrix)
+        self.n = len(cost_matrix)
+        # Map cities to equitorial angles (longitude phi)
+        self.phi = np.linspace(0, 2 * np.pi, self.n, endpoint=False)
+
+    def get_city_state(self, i):
+        """Returns the state |P_ii> on the equator."""
+        phi = self.phi[i]
+        # State: 1/sqrt(2) * (|0> + exp(i*phi)|1>)
+        return np.array([1, np.exp(1j * phi)]) / np.sqrt(2)
+
+    def get_intermediate_state(self, i, j):
+        """Returns state |P_ij> encoding distance s_ij."""
+        phi_i = self.phi[i]
+        dist = self.B[i][j]
+        # Normalize distance to an angle theta in [0, pi/2]
+        # Brachistochrone mapping: theta proportional to distance
+        theta = (dist / (np.max(self.B) * 1.1)) * (np.pi / 2)
+        # State: cos(theta/2)|0> + exp(i*phi)sin(theta/2)|1>
+        return np.array([np.cos(theta / 2), np.exp(1j * phi_i) * np.sin(theta / 2)])
+
+    def rotation_operator(self, target_state, current_state):
+        """Creates a unitary that moves current_state towards target_state."""
+        # This is a simplified version of the paper's U_u and U_d
+        # We find the rotation that aligns the vectors
+        # For simulation, we can model the 'strength' alpha as a projection
+        return np.outer(target_state, current_state.conj())
+
+    def solve_spsa(self, iterations=100, a=0.1, c=0.01):
+        """Simultaneous Perturbation Stochastic Approximation to find optimal path."""
+        num_cities = self.n
+        # Parameters: one 'strength' alpha for every possible edge (i,j)
+        params = np.random.rand(num_cities, num_cities)
+
+        def cost_fn(p):
+            # Calculate 'Expected Distance' based on parameter weights
+            # In a real quantum run, this would be derived from State Tomography
+            total_dist = 0
+            for i in range(num_cities):
+                weights = np.exp(p[i]) / np.sum(np.exp(p[i]))  # Softmax
+                total_dist += np.sum(weights * self.B[i])
+            return total_dist
+
+        # SPSA Loop
+        for k in range(1, iterations + 1):
+            ak = a / (k + 1) ** 0.602
+            ck = c / (k + 1) ** 0.101
+            delta = np.random.choice([-1, 1], size=params.shape)
+
+            f_plus = cost_fn(params + ck * delta)
+            f_minus = cost_fn(params - ck * delta)
+
+            grad = (f_plus - f_minus) / (2 * ck * delta)
+            params = params - ak * grad
+
+            if k % 10 == 0 or k == iterations:
+                percent = (k / iterations) * 100
+                bar_length = 30
+                filled_length = int(bar_length * k // iterations)
+                bar = '=' * filled_length + '-' * (bar_length - filled_length)
+                sys.stdout.write(f'\rProgress: [{bar}] {percent:.1f}%')
+                sys.stdout.flush()
+        print()
+
+        # Decode optimal path from optimized parameters
+        path = [0]
+        visited = {0}
+        for _ in range(num_cities - 1):
+            curr = path[-1]
+            # Pick next city with highest weight that hasn't been visited
+            options = np.argsort(-params[curr])
+            for opt in options:
+                if opt not in visited:
+                    path.append(opt)
+                    visited.add(opt)
+                    break
+        path.append(0)  # Return to start
+        return path, params
+
+    def visualize_bloch(self, path):
+        """Visualizes the cities and path on the Bloch sphere."""
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Draw Bloch Sphere surface
+        u = np.linspace(0, 2 * np.pi, 100)
+        v = np.linspace(0, np.pi, 100)
+        x = np.outer(np.cos(u), np.sin(v))
+        y = np.outer(np.sin(u), np.sin(v))
+        z = np.outer(np.ones(np.size(u)), np.cos(v))
+        ax.plot_surface(x, y, z, color='whitesmoke', alpha=0.1)
+        ax.plot_wireframe(x, y, z, color='lightgray', alpha=0.2)
+
+        # Plot Cities on Equator
+        coords = []
+        for i in range(self.n):
+            phi = self.phi[i]
+            # Bloch coordinates for state 1/sqrt(2)(|0> + e^(iphi)|1>) are (x,y,z) = (cos(phi), sin(phi), 0)
+            xc, yc, zc = np.cos(phi), np.sin(phi), 0
+            coords.append((xc, yc, zc))
+            ax.scatter(xc, yc, zc, color='red', s=50)
+            ax.text(xc * 1.1, yc * 1.1, zc, str(i), fontsize=10, fontweight='bold')
+
+        # Plot Path
+        for k in range(len(path) - 1):
+            p1 = coords[path[k]]
+            p2 = coords[path[k+1]]
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]], color='blue', linewidth=1.5)
+
+        ax.set_title("TSP Path on Bloch Sphere")
+        ax.set_axis_off()
+        plt.show()
+
+    def solve_brute_force(self):
+        """Finds the exact optimal path using brute-force search."""
+        # Fix start node 0, permute the rest to reduce complexity to (N-1)!
+        cities = list(range(1, self.n))
+        min_cost = float('inf')
+        best_path = []
+
+        for perm in itertools.permutations(cities):
+            current_path = [0] + list(perm) + [0]
+            current_cost = 0
+            for i in range(len(current_path) - 1):
+                current_cost += self.B[current_path[i]][current_path[i+1]]
+            
+            if current_cost < min_cost:
+                min_cost = current_cost
+                best_path = current_path
+        
+        return best_path, min_cost
+
+    def simulate_state_tomography(self, params):
+        """
+        Simulates state tomography to calculate the probability of each valid path.
+        Returns a sorted list of (path, probability) tuples.
+        """
+        # Calculate transition probabilities (Softmax)
+        probs = np.zeros_like(params)
+        for i in range(self.n):
+            # Use stable softmax
+            row_exp = np.exp(params[i] - np.max(params[i]))
+            probs[i] = row_exp / np.sum(row_exp)
+
+        # Iterate all valid tours (fixing start at 0)
+        cities = list(range(1, self.n))
+        path_probabilities = []
+
+        for perm in itertools.permutations(cities):
+            path = [0] + list(perm) + [0]
+            prob = 1.0
+            for k in range(len(path) - 1):
+                prob *= probs[path[k]][path[k+1]]
+            path_probabilities.append((path, prob))
+
+        # Sort by probability descending
+        path_probabilities.sort(key=lambda x: x[1], reverse=True)
+        return path_probabilities
+
+
+# --- Example Usage ---
+test_cases = [
+    ("4-City Symmetric", dist_4_city),
+    ("5-City Asymmetric", dist_5_asymmetric),
+    ("8-City Symmetric", dist_8_city)
+]
+
+for name, matrix in test_cases:
+    print(f"\n--- {name} ---")
+    solver = SingleQubitTSP(matrix)
+    
+    print("Solving with SPSA...")
+    best_path, params = solver.solve_spsa(iterations=2000)
+    spsa_cost = sum(solver.B[best_path[i]][best_path[i+1]] for i in range(len(best_path)-1))
+    print(f"SPSA Path: {' -> '.join(map(str, best_path))}")
+    print(f"SPSA Cost: {spsa_cost}")
+
+    print("Calculating path probabilities (State Tomography)...")
+    path_probs = solver.simulate_state_tomography(params)
+    print("Top 3 Probable Paths:")
+    for p, prob in path_probs[:3]:
+        cost = sum(solver.B[p[i]][p[i+1]] for i in range(len(p)-1))
+        print(f"  Path: {' -> '.join(map(str, p))} | Prob: {prob:.4e} | Cost: {cost}")
+
+    print("Calculating exact solution (Brute Force)...")
+    bf_path, bf_cost = solver.solve_brute_force()
+    print(f"Exact Path: {' -> '.join(map(str, bf_path))}")
+    print(f"Exact Cost: {bf_cost}")
