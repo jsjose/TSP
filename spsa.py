@@ -2,9 +2,25 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import itertools
-
+import time # Importar el módulo time
+from math import factorial
 
 import numpy as np
+
+def print_progress(iteration, total, start_time, prefix='Progress:', length=30):
+    elapsed_time = time.time() - start_time
+    progress_ratio = iteration / total
+    if progress_ratio > 0:
+        eta_seconds = elapsed_time / progress_ratio - elapsed_time
+        minutes, seconds = divmod(int(eta_seconds), 60)
+        eta_str = f" ETA: {minutes:02d}m {seconds:02d}s"
+    else:
+        eta_str = ""
+    percent = (iteration / total) * 100
+    filled_length = int(length * iteration // total)
+    bar = '=' * filled_length + '-' * (length - filled_length)
+    sys.stdout.write(f'\r{prefix} [{bar}] {percent:.1f}%{eta_str}')
+    sys.stdout.flush()
 
 # 1. Four-City Symmetric TSP (Example from Fig. 4)
 # The paper uses this to demonstrate the basic functionality.
@@ -89,6 +105,8 @@ class SingleQubitTSP:
         # Parameters: one 'strength' alpha for every possible edge (i,j)
         params = np.random.rand(num_cities, num_cities)
 
+        start_time = time.time() # Start time for ETA calculation
+
         def cost_fn(p):
             # Calculate 'Expected Distance' based on parameter weights
             # In a real quantum run, this would be derived from State Tomography
@@ -111,12 +129,7 @@ class SingleQubitTSP:
             params = params - ak * grad
 
             if k % 10 == 0 or k == iterations:
-                percent = (k / iterations) * 100
-                bar_length = 30
-                filled_length = int(bar_length * k // iterations)
-                bar = '=' * filled_length + '-' * (bar_length - filled_length)
-                sys.stdout.write(f'\rProgress: [{bar}] {percent:.1f}%')
-                sys.stdout.flush()
+                print_progress(k, iterations, start_time)
         print()
 
         # Decode optimal path from optimized parameters
@@ -150,13 +163,16 @@ class SingleQubitTSP:
 
         # Plot Cities on Equator
         coords = []
+        start_time = time.time()
         for i in range(self.n):
+            print_progress(i + 1, self.n, start_time, prefix="Visualizing:")
             phi = self.phi[i]
             # Bloch coordinates for state 1/sqrt(2)(|0> + e^(iphi)|1>) are (x,y,z) = (cos(phi), sin(phi), 0)
             xc, yc, zc = np.cos(phi), np.sin(phi), 0
             coords.append((xc, yc, zc))
             ax.scatter(xc, yc, zc, color='red', s=50)
             ax.text(xc * 1.1, yc * 1.1, zc, str(i), fontsize=10, fontweight='bold')
+        print()
 
         # Plot Path
         for k in range(len(path) - 1):
@@ -169,13 +185,15 @@ class SingleQubitTSP:
         plt.show()
 
     def solve_brute_force(self):
-        """Finds the exact optimal path using brute-force search."""
-        # Fix start node 0, permute the rest to reduce complexity to (N-1)!
+        """Finds the exact optimal path using brute-force search with a progress bar."""
         cities = list(range(1, self.n))
         min_cost = float('inf')
         best_path = []
 
-        for perm in itertools.permutations(cities):
+        total_permutations = factorial(self.n - 1)
+        start_time = time.time() # Start time for ETA calculation
+        
+        for k, perm in enumerate(itertools.permutations(cities)):
             current_path = [0] + list(perm) + [0]
             current_cost = 0
             for i in range(len(current_path) - 1):
@@ -184,6 +202,10 @@ class SingleQubitTSP:
             if current_cost < min_cost:
                 min_cost = current_cost
                 best_path = current_path
+
+            if k % 10000 == 0 or k == total_permutations - 1: # Update progress every 10,000 permutations or at the end
+                print_progress(k + 1, total_permutations, start_time)
+        print() # New line after completion
         
         return best_path, min_cost
 
@@ -257,6 +279,8 @@ class SingleQubitTSP:
         best_global_path = None
         min_global_dist = float('inf')
 
+        start_time_global = time.time() # Start time for global ETA
+
         for trial in range(trials):
             # Initialize random weights for edges
             params = np.random.randn(self.n, self.n) * 0.1
@@ -281,14 +305,71 @@ class SingleQubitTSP:
             if trial_dist < min_global_dist:
                 min_global_dist = trial_dist
                 best_global_path = trial_path
+
+            # Update progress bar for trials
+            prefix = f"Refined SPSA Progress (Trial {trial + 1}/{trials}):"
+            print_progress(trial + 1, trials, start_time_global, prefix=prefix)
+        print() # New line after completion
                 
         return best_global_path, min_global_dist
+
+def calculate_total_distance(path, dist_matrix):
+    """Computes the total length of the TSP tour."""
+    distance = 0
+    for i in range(len(path) - 1):
+        distance += dist_matrix[path[i]][path[i+1]]
+    return distance
+
+def two_opt_refinement(path, dist_matrix):
+    """
+    Iteratively improves a TSP path by swapping edges (2-opt).
+    """
+    best_path = list(path)
+    best_dist = calculate_total_distance(best_path, dist_matrix)
+    improved = True
+    
+    while improved:
+        improved = False
+        start_time = time.time()
+        total_steps = len(best_path) - 3
+        # Loop through all possible pairs to swap (excluding adjacent edges)
+        for i in range(1, len(best_path) - 2):
+            print_progress(i, total_steps, start_time, prefix="2-opt Refinement:")
+            for j in range(i + 1, len(best_path) - 1):
+                # Potential new path: reverse the segment between i and j
+                new_path = best_path[:i] + best_path[i:j+1][::-1] + best_path[j+1:]
+                new_dist = calculate_total_distance(new_path, dist_matrix)
+                
+                if new_dist < best_dist:
+                    best_path = new_path
+                    best_dist = new_dist
+                    improved = True
+                    break # Restart with the improved path
+            if improved:
+                break
+    print()
+                
+    return best_path, best_dist
+
+def generate_random_tsp(n_cities, seed=42):
+    np.random.seed(seed)
+    coords = np.random.rand(n_cities, 2) * 100
+    dist_matrix = np.zeros((n_cities, n_cities))
+    for i in range(n_cities):
+        for j in range(n_cities):
+            dist_matrix[i][j] = np.linalg.norm(coords[i] - coords[j])
+    return dist_matrix
 
 # --- Example Usage ---
 test_cases = [
     ("4-City Symmetric", dist_4_city),
     ("5-City Asymmetric", dist_5_asymmetric),
-    ("8-City Symmetric", dist_8_city)
+    ("8-City Symmetric", dist_8_city),
+    ("6-City Random", generate_random_tsp(6)),
+    ("7-City Random", generate_random_tsp(7)),
+    ("11-City Random", generate_random_tsp(11)),
+    ("13-City Random", generate_random_tsp(13)),
+    ("17-City Random", generate_random_tsp(17))
 ]
 
 for name, matrix in test_cases:
@@ -301,19 +382,30 @@ for name, matrix in test_cases:
     print(f"SPSA Path: {' -> '.join(map(str, best_path))}")
     print(f"SPSA Cost: {spsa_cost}")
 
-    print("Calculating path probabilities (State Tomography)...")
-    path_probs = solver.simulate_state_tomography(params)
-    print("Top 3 Probable Paths:")
-    for p, prob in path_probs[:3]:
-        cost = sum(solver.B[p[i]][p[i+1]] for i in range(len(p)-1))
-        print(f"  Path: {' -> '.join(map(str, p))} | Prob: {prob:.4e} | Cost: {cost}")
+    if solver.n <= 8:
+        print("Calculating path probabilities (State Tomography)...")
+        path_probs = solver.simulate_state_tomography(params)
+        print("Top 3 Probable Paths:")
+        for p, prob in path_probs[:3]:
+            cost = sum(solver.B[p[i]][p[i+1]] for i in range(len(p)-1))
+            print(f"  Path: {' -> '.join(map(str, p))} | Prob: {prob:.4e} | Cost: {cost}")
+    else:
+        print(f"Skipping State Tomography for {solver.n} cities (too many permutations).")  
 
     print("Solving with Refined SPSA...")
     refined_path, refined_cost = solver.solve_refined(trials=3, iterations=1000)
     print(f"Refined Path: {' -> '.join(map(str, refined_path))}")
-    print(f"Refined Cost: {refined_cost}")
+    print(f"Refined Cost: {refined_cost}") 
 
-    print("Calculating exact solution (Brute Force)...")
-    bf_path, bf_cost = solver.solve_brute_force()
-    print(f"Exact Path: {' -> '.join(map(str, bf_path))}")
-    print(f"Exact Cost: {bf_cost}")
+    print("Applying 2-opt Refinement...")
+    optimized_path, final_cost = two_opt_refinement(refined_path, solver.B)
+    print(f"Optimized Path after 2-opt: {' -> '.join(map(str, optimized_path))}")
+    print(f"Optimized Cost after 2-opt: {final_cost}")  
+
+    if solver.n < 13:
+        print("Calculating exact solution (Brute Force)...")
+        bf_path, bf_cost = solver.solve_brute_force()
+        print(f"Exact Path: {' -> '.join(map(str, bf_path))}")
+        print(f"Exact Cost: {bf_cost}")
+    else:
+        print(f"Skipping Brute Force for {solver.n} cities (too computationally expensive).")
