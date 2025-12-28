@@ -25,13 +25,19 @@ def get_batch_distances(perms, dist_matrix):
 
 @mx.compile
 def solve_tsp_batch(batch_indices, n_cities, dist_matrix):
-    # This is a simplified version of generating permutations via vector math.
-    # For real brute force, you would map batch_indices to permutations here.
-    # For demonstration, we'll create a random batch of permutations:
+    """
+    Generates a batch of random permutations and finds the best one.
+    """
+    batch_size = batch_indices.shape[0]
     
-    # Note: Generating actual permutations vectorially is complex.
-    # Typically, we'd use a pre-calculated block of permutations.
-    pass
+    # Generate random permutations using argsort on random noise
+    keys = mx.random.uniform(shape=(batch_size, n_cities))
+    perms = mx.argsort(keys, axis=1)
+    
+    dists = get_batch_distances(perms, dist_matrix)
+    
+    best_idx = mx.argmin(dists)
+    return dists[best_idx], perms[best_idx]
 
 n = 10 
 dist_matrix = mx.random.uniform(shape=(n, n))
@@ -50,11 +56,8 @@ batch_size = 1_000_000
 
 # 1. Generate a batch of random permutations to test performance
 # (In a real brute force, you'd iterate through all permutations)
-test_perms = mx.array(np.array([np.random.permutation(n) for _ in range(batch_size)]))
+batch_indices = mx.arange(batch_size)
 
-# 2. Run the vectorized distance calculation on GPU
-distances = get_batch_distances(test_perms, dist_matrix)
-
-# 3. Find the best in this batch
-best_idx = mx.argmin(distances)
-print(f"Best distance in batch: {distances[best_idx].item()}")
+best_dist, best_perm = solve_tsp_batch(batch_indices, n, dist_matrix)
+print(f"Best distance in batch: {best_dist.item()}")
+print(f"Best path: {best_perm}")

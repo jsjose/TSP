@@ -5,6 +5,9 @@ import itertools
 import time
 from math import factorial
 import datetime
+import mlx.core as mx
+from itertools import combinations
+import os
 
 # --- Utility: Progress Bar ---
 def print_progress(iteration, total, start_time, prefix='Progress:', length=30):
@@ -21,6 +24,158 @@ def print_progress(iteration, total, start_time, prefix='Progress:', length=30):
     bar = '=' * filled_length + '-' * (length - filled_length)
     sys.stdout.write(f'\r{prefix} [{bar}] {percent:.1f}%{eta_str}')
     sys.stdout.flush()
+
+def get_batch_distances(perms, dist_matrix):
+    """
+    Vectorized distance calculation for a batch of permutations.
+    perms: (batch_size, n_cities)
+    dist_matrix: (n_cities, n_cities)
+    """
+    # Create indices for 'from' and 'to' cities
+    # perms[:, :-1] are starting cities, perms[:, 1:] are destination cities
+    starts = perms[:, :-1]
+    ends = perms[:, 1:]
+    
+    # Return to start city to close the loop
+    starts_final = perms[:, -1]
+    ends_final = perms[:, 0]
+    
+    # Vectorized gathering of distances from the matrix
+    dists = dist_matrix[starts, ends].sum(axis=1)
+    dists += dist_matrix[starts_final, ends_final]
+    
+    return dists
+
+@mx.compile
+def solve_tsp_batch(batch_indices, n_cities, dist_matrix):
+    """
+    Generates a batch of random permutations and finds the best one.
+    """
+    batch_size = batch_indices.shape[0]
+    
+    # Generate random permutations using argsort on random noise
+    keys = mx.random.uniform(shape=(batch_size, n_cities))
+    perms = mx.argsort(keys, axis=1)
+    
+    dists = get_batch_distances(perms, dist_matrix)
+    
+    best_idx = mx.argmin(dists)
+    return dists[best_idx], perms[best_idx]
+
+def solve_tsp_held_karp_mlx(dist_matrix):
+    """
+    Solves TSP using Held-Karp (Dynamic Programming) on Apple Silicon GPU (MLX).
+    
+    Args:
+        dist_matrix (np.ndarray): NxN distance matrix.
+        
+    Returns:
+        (cost, path): Tuple containing the minimum cost and the optimal path list.
+    """
+    n = int(dist_matrix.shape[0])
+    
+    # 1. Initialize DP Table and Parent Table
+    # Rows: 2^n subsets (bitmasks)
+    # Cols: n cities (last visited city)
+    
+    # We use 'inf' for unreachable states
+    dp = mx.full((1 << n, n), float('inf'))
+    
+    # Parent table to store the previous city for path reconstruction
+    # We initialize with -1
+    parent = mx.full((1 << n, n), -1, dtype=mx.int32)
+
+    # Base case: Starting at city 0 with only city 0 visited
+    # Mask 1 (binary ...001) represents set {0}
+    dp[1, 0] = 0.0
+
+    # Convert distance matrix to MLX array for GPU ops
+    dist_mx = mx.array(dist_matrix)
+
+    # 2. Iterate through subset sizes (from 2 up to N)
+    # We build the solution layer by layer.
+    for size in range(2, n + 1):
+        # Generate all combinations of size-1 cities (excluding 0)
+        # We use Numpy for fast bitmask generation on CPU
+        combos = list(combinations(range(1, n), size - 1))
+        combos_np = np.array(combos, dtype=np.int32)
+        
+        # Calculate masks: sum(1 << city) | 1
+        # 1 << combos_np gives shape (num_combos, size-1)
+        # sum(axis=1) gives the mask part for the subset
+        # | 1 adds the start city 0
+        part_masks = (1 << combos_np).sum(axis=1)
+        masks_np = part_masks | 1
+        
+        masks = mx.array(masks_np)
+        
+        # Prepare to collect columns for vectorized update
+        new_dp_cols = []
+        new_parent_cols = []
+        
+        # Col 0 is dummy (inf)
+        B = masks.shape[0]
+        new_dp_cols.append(mx.full((B,), float('inf')))
+        new_parent_cols.append(mx.full((B,), -1, dtype=mx.int32))
+        
+        for k in range(1, n):
+            # Vectorized prev_mask calculation
+            # If k is in mask, prev_mask is valid (size-1).
+            # If k is NOT in mask, prev_mask is invalid (size+1), pointing to inf costs.
+            prev_masks = masks ^ (1 << k)
+            
+            # Fetch costs: dp[prev_masks] -> (B, n)
+            prev_costs = dp[prev_masks]
+            
+            # Fetch distances: dist_mx[:, k] -> (n,)
+            dists = dist_mx[:, k]
+            
+            # Add: (B, n) + (n,) -> (B, n)
+            total_costs = prev_costs + dists
+            
+            # Min and Argmin
+            min_cost = mx.min(total_costs, axis=1)
+            best_prev = mx.argmin(total_costs, axis=1)
+            
+            new_dp_cols.append(min_cost)
+            new_parent_cols.append(best_prev)
+            
+        # Stack to create (B, n) update block
+        update_vals = mx.stack(new_dp_cols, axis=1)
+        update_parents = mx.stack(new_parent_cols, axis=1)
+        
+        # Scatter update
+        dp[masks] = update_vals
+        parent[masks] = update_parents
+        
+        # Crucial: Eval to clear graph and free resources
+        mx.eval(dp, parent)
+
+    # 3. Final Step: Return to start (City 0)
+    # We look at the mask with ALL cities visited ((1<<n) - 1)
+    full_mask = (1 << n) - 1
+    
+    # Calculate cost to return to 0 from any end city k
+    last_costs = dp[full_mask, 1:] + dist_mx[1:, 0]
+    
+    final_cost = mx.min(last_costs).item()
+    last_city_index = mx.argmin(last_costs).item() + 1 # +1 because we sliced 1:
+    
+    # 4. Reconstruct Path Backwards
+    path = [0]
+    curr_city = last_city_index
+    curr_mask = full_mask
+    
+    # Trace back from the end
+    for _ in range(n - 1):
+        path.append(curr_city)
+        new_city = parent[curr_mask, curr_city].item()
+        curr_mask = curr_mask ^ (1 << curr_city)
+        curr_city = new_city
+        
+    path.append(0) # Start city
+    
+    return final_cost, path[::-1] # Reverse to get Start -> End
 
 class SingleQubitTSP:
     def __init__(self, cost_matrix):
@@ -136,14 +291,64 @@ class SingleQubitTSP:
                 if improved: break
         return best_path, best_dist
 
+    def montecarlo_explore_mlx(self, batch_size=1_000_000):
+        """Finds the optimal path using MLX-based random batch search (Monte Carlo)."""
+        
+        # Calculate total permutations (N-1)!
+        total_perms = factorial(self.n - 1)
+        
+        # For N=12 (40M perms), we need ~40 batches of 1M.
+        # For N=13 (480M perms), we need ~480 batches.
+        # We cap samples at 500M to prevent infinite runtimes for N>=14.
+        max_samples = 500_000_000
+        # We aim for 1.5x coverage to account for random collisions
+        target_samples = min(int(total_perms * 1.5), max_samples)
+        
+        iterations = (target_samples + batch_size - 1) // batch_size
+        
+        print(f"Monte Carlo (MLX): Sampling {target_samples:.1e} paths ({iterations} batches)...")
+        
+        dist_matrix_mx = mx.array(self.B)
+        batch_indices = mx.arange(batch_size)
+        
+        global_best_dist = float('inf')
+        global_best_perm = None
+        
+        start_time = time.time()
+        
+        for i in range(iterations):
+            best_dist, best_perm = solve_tsp_batch(batch_indices, self.n, dist_matrix_mx)
+            mx.eval(best_dist, best_perm)
+            
+            cost = best_dist.item()
+            if cost < global_best_dist:
+                global_best_dist = cost
+                global_best_perm = best_perm
+            
+            if iterations > 5 and (i % (iterations // 10 + 1) == 0):
+                print_progress(i + 1, iterations, start_time, prefix="MC Sampling:")
+        
+        print_progress(iterations, iterations, start_time, prefix="MC Sampling:")
+        print()
+        
+        # Convert to Python/Numpy
+        path_np = np.array(global_best_perm.tolist())
+        
+        # Rotate to start at 0
+        zero_idx = np.where(path_np == 0)[0][0]
+        path_ordered = np.concatenate((path_np[zero_idx:], path_np[:zero_idx]))
+        path_final = path_ordered.tolist() + [0]
+        
+        return path_final, global_best_dist
+
     def solve_brute_force(self):
-        """Finds the exact optimal path using brute-force search with a progress bar."""
+        """Finds the exact optimal path using brute-force search (itertools)."""
         cities = list(range(1, self.n))
         min_cost = float('inf')
         best_path = []
 
         total_permutations = factorial(self.n - 1)
-        start_time = time.time() # Start time for ETA calculation
+        start_time = time.time()
         
         for k, perm in enumerate(itertools.permutations(cities)):
             current_path = [0] + list(perm) + [0]
@@ -155,9 +360,9 @@ class SingleQubitTSP:
                 min_cost = current_cost
                 best_path = current_path
 
-            if k % 10000 == 0 or k == total_permutations - 1: # Update progress every 10,000 permutations or at the end
-                print_progress(k + 1, total_permutations, start_time)
-        print() # New line after completion
+            if k % 100000 == 0 or k == total_permutations - 1:
+                print_progress(k + 1, total_permutations, start_time, prefix="Brute Force:")
+        print()
         
         return best_path, min_cost
 
@@ -340,7 +545,7 @@ for name, matrix in test_cases:
     best_cost = None
     hybrid_time = None
 
-    if solver.n < 50:
+    if solver.n <= 50:
         print("Solving with Hybrid SPSA...")
         start_time = time.time()
         best_path, best_cost = solver.solve_hybrid(iters_1st=1000, iters_2nd=500)
@@ -364,6 +569,33 @@ for name, matrix in test_cases:
     print(f"Optimized Path after 2-opt: {' -> '.join(map(str, optimized_path))}")
     print(f"Optimized Cost after 2-opt: {final_cost}")  
 
+    mc_cost = None
+    mc_time = None
+    mc_path = None
+    if solver.n <= 50:
+        print("Calculating approximate solution (Monte Carlo MLX)...")
+        start_time = time.time()
+        mc_path, mc_cost = solver.montecarlo_explore_mlx()
+        mc_time = time.time() - start_time
+        print(f"Monte Carlo Path: {' -> '.join(map(str, mc_path))}")
+        print(f"Monte Carlo Cost: {mc_cost:.2f}")
+    else:
+        print(f"Skipping Monte Carlo for {solver.n} cities.")
+
+    hk_cost = None
+    hk_time = None
+    hk_path = None
+    # Limit Held-Karp to n < 50 due to computational constraints
+    if solver.n < 50:
+        print("Calculating exact solution (Held-Karp MLX)...")
+        start_time = time.time()
+        hk_cost, hk_path = solve_tsp_held_karp_mlx(solver.B)
+        hk_time = time.time() - start_time
+        print(f"Held-Karp Path: {' -> '.join(map(str, hk_path))}")
+        print(f"Held-Karp Cost: {hk_cost:.2f}")
+    else:
+        print(f"Skipping Held-Karp for {solver.n} cities.")
+
     bf_cost = None
     bf_time = None
     if solver.n < 13:
@@ -382,16 +614,20 @@ for name, matrix in test_cases:
         "Hybrid": (best_cost, hybrid_time, best_path),
         "Refined": (refined_cost, refined_time, refined_path),
         "Refined+2Opt": (final_cost, refined_time + two_opt_time, optimized_path),
+        "MonteCarlo": (mc_cost, mc_time, mc_path),
+        "HeldKarp": (hk_cost, hk_time, hk_path),
         "BruteForce": (bf_cost, bf_time, bf_path)
     })
 
-print("\n" + "="*115)
-print(f"{'TEST CASE':<20} | {'HYBRID (Cost/Time)':<25} | {'REFINED (Cost/Time)':<25} | {'REF+2OPT (Cost/Time)':<25} | {'BRUTE FORCE':<15}")
-print("-" * 115)
+print("\n" + "="*165)
+print(f"{'TEST CASE':<20} | {'HYBRID (Cost/Time)':<20} | {'REFINED (Cost/Time)':<20} | {'REF+2OPT (Cost/Time)':<20} | {'MONTE CARLO':<20} | {'HELD KARP':<20} | {'BRUTE FORCE':<15}")
+print("-" * 165)
 for res in results_summary:
     h_c, h_t, _ = res["Hybrid"]
     r_c, r_t, _ = res["Refined"]
     r2_c, r2_t, _ = res["Refined+2Opt"]
+    mc_c, mc_t, _ = res["MonteCarlo"]
+    hk_c, hk_t, _ = res["HeldKarp"]
     bf_c, bf_t, _ = res["BruteForce"]
     
     if h_c is not None:
@@ -401,28 +637,43 @@ for res in results_summary:
     r_str = f"{r_c:.2f} / {r_t:.2f}s"
     r2_str = f"{r2_c:.2f} / {r2_t:.2f}s"
     
+    if mc_c is not None:
+        mc_str = f"{mc_c:.2f} / {mc_t:.2f}s"
+    else:
+        mc_str = "N/A"
+
+    if hk_c is not None:
+        hk_str = f"{hk_c:.2f} / {hk_t:.2f}s"
+    else:
+        hk_str = "N/A"
+
     if bf_c is not None:
         bf_str = f"{bf_c:.2f} / {bf_t:.4f}s"
     else:
         bf_str = "N/A"
     
-    print(f"{res['Case']:<20} | {h_str:<25} | {r_str:<25} | {r2_str:<25} | {bf_str:<15}")
-print("="*115 + "\n")
+    print(f"{res['Case']:<20} | {h_str:<20} | {r_str:<20} | {r2_str:<20} | {mc_str:<20} | {hk_str:<20} | {bf_str:<15}")
+print("="*165 + "\n")
 
 # --- Export Results to File ---
+output_dir = "results"
+os.makedirs(output_dir, exist_ok=True)
+
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-filename = f"tsp_results_{timestamp}.txt"
+filename = os.path.join(output_dir, f"tsp_results_{timestamp}.txt")
 
 with open(filename, "w") as f:
     f.write(f"TSP Optimization Results - {timestamp}\n")
-    f.write("="*115 + "\n")
-    f.write(f"{'TEST CASE':<20} | {'HYBRID (Cost/Time)':<25} | {'REFINED (Cost/Time)':<25} | {'REF+2OPT (Cost/Time)':<25} | {'BRUTE FORCE':<15}\n")
-    f.write("-" * 115 + "\n")
+    f.write("="*165 + "\n")
+    f.write(f"{'TEST CASE':<20} | {'HYBRID (Cost/Time)':<20} | {'REFINED (Cost/Time)':<20} | {'REF+2OPT (Cost/Time)':<20} | {'MONTE CARLO':<20} | {'HELD KARP':<20} | {'BRUTE FORCE':<15}\n")
+    f.write("-" * 165 + "\n")
     
     for res in results_summary:
         h_c, h_t, _ = res["Hybrid"]
         r_c, r_t, _ = res["Refined"]
         r2_c, r2_t, _ = res["Refined+2Opt"]
+        mc_c, mc_t, _ = res["MonteCarlo"]
+        hk_c, hk_t, _ = res["HeldKarp"]
         bf_c, bf_t, _ = res["BruteForce"]
         
         if h_c is not None:
@@ -432,16 +683,26 @@ with open(filename, "w") as f:
         r_str = f"{r_c:.2f} / {r_t:.2f}s"
         r2_str = f"{r2_c:.2f} / {r2_t:.2f}s"
         
+        if mc_c is not None:
+            mc_str = f"{mc_c:.2f} / {mc_t:.2f}s"
+        else:
+            mc_str = "N/A"
+
+        if hk_c is not None:
+            hk_str = f"{hk_c:.2f} / {hk_t:.2f}s"
+        else:
+            hk_str = "N/A"
+
         if bf_c is not None:
             bf_str = f"{bf_c:.2f} / {bf_t:.4f}s"
         else:
             bf_str = "N/A"
         
-        f.write(f"{res['Case']:<20} | {h_str:<25} | {r_str:<25} | {r2_str:<25} | {bf_str:<15}\n")
+        f.write(f"{res['Case']:<20} | {h_str:<20} | {r_str:<20} | {r2_str:<20} | {mc_str:<20} | {hk_str:<20} | {bf_str:<15}\n")
     
-    f.write("="*115 + "\n\n")
+    f.write("="*165 + "\n\n")
     f.write("DETAILED RESULTS\n")
-    f.write("="*115 + "\n")
+    f.write("="*165 + "\n")
 
     for res in results_summary:
         f.write(f"\n--- {res['Case']} ---\n")
@@ -454,6 +715,14 @@ with open(filename, "w") as f:
             f.write("Hybrid SPSA:     Skipped\n")
         f.write(f"Refined SPSA:    Cost={res['Refined'][0]:.2f}, Time={res['Refined'][1]:.4f}s, Path={res['Refined'][2]}\n")
         f.write(f"Refined + 2-Opt: Cost={res['Refined+2Opt'][0]:.2f}, Time={res['Refined+2Opt'][1]:.4f}s, Path={res['Refined+2Opt'][2]}\n")
+        if res['MonteCarlo'][0] is not None:
+            f.write(f"Monte Carlo:     Cost={res['MonteCarlo'][0]:.2f}, Time={res['MonteCarlo'][1]:.4f}s, Path={res['MonteCarlo'][2]}\n")
+        else:
+            f.write("Monte Carlo:     Skipped\n")
+        if res['HeldKarp'][0] is not None:
+            f.write(f"Held-Karp:       Cost={res['HeldKarp'][0]:.2f}, Time={res['HeldKarp'][1]:.4f}s, Path={res['HeldKarp'][2]}\n")
+        else:
+            f.write("Held-Karp:       Skipped\n")
         if res['BruteForce'][0] is not None:
             f.write(f"Brute Force:     Cost={res['BruteForce'][0]:.2f}, Time={res['BruteForce'][1]:.4f}s, Path={res['BruteForce'][2]}\n")
         else:
@@ -468,6 +737,8 @@ n_vals = []
 hybrid_costs, hybrid_times = [], []
 refined_costs, refined_times = [], []
 r2opt_costs, r2opt_times = [], []
+mc_costs, mc_times = [], []
+hk_costs, hk_times = [], []
 bf_costs, bf_times = [], []
 
 for res in results_summary:
@@ -489,6 +760,16 @@ for res in results_summary:
     r2opt_costs.append(r2c)
     r2opt_times.append(r2t)
     
+    # Monte Carlo
+    mcc, mct, _ = res['MonteCarlo']
+    mc_costs.append(mcc if mcc is not None else np.nan)
+    mc_times.append(mct if mct is not None else np.nan)
+
+    # Held-Karp
+    hkc, hkt, _ = res['HeldKarp']
+    hk_costs.append(hkc if hkc is not None else np.nan)
+    hk_times.append(hkt if hkt is not None else np.nan)
+
     # Brute Force
     bfc, bft, _ = res['BruteForce']
     bf_costs.append(bfc if bfc is not None else np.nan)
@@ -503,6 +784,10 @@ refined_costs = np.array(refined_costs)[perm]
 refined_times = np.array(refined_times)[perm]
 r2opt_costs = np.array(r2opt_costs)[perm]
 r2opt_times = np.array(r2opt_times)[perm]
+mc_costs = np.array(mc_costs)[perm]
+mc_times = np.array(mc_times)[perm]
+hk_costs = np.array(hk_costs)[perm]
+hk_times = np.array(hk_times)[perm]
 bf_costs = np.array(bf_costs)[perm]
 bf_times = np.array(bf_times)[perm]
 
@@ -512,6 +797,8 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 ax1.plot(n_vals, hybrid_costs, 'o-', label='Hybrid SPSA')
 ax1.plot(n_vals, refined_costs, 's-', label='Refined SPSA')
 ax1.plot(n_vals, r2opt_costs, '^-', label='Refined + 2-Opt')
+ax1.plot(n_vals, mc_costs, 'd--', label='Monte Carlo', color='purple', alpha=0.7)
+ax1.plot(n_vals, hk_costs, '*--', label='Held-Karp', color='orange', alpha=0.8)
 ax1.plot(n_vals, bf_costs, 'x--', label='Brute Force', color='k', alpha=0.6)
 ax1.set_title('Cost vs Number of Cities')
 ax1.set_xlabel('Number of Cities')
@@ -523,6 +810,8 @@ ax1.grid(True)
 ax2.plot(n_vals, hybrid_times, 'o-', label='Hybrid SPSA')
 ax2.plot(n_vals, refined_times, 's-', label='Refined SPSA')
 ax2.plot(n_vals, r2opt_times, '^-', label='Refined + 2-Opt')
+ax2.plot(n_vals, mc_times, 'd--', label='Monte Carlo', color='purple', alpha=0.7)
+ax2.plot(n_vals, hk_times, '*--', label='Held-Karp', color='orange', alpha=0.8)
 ax2.plot(n_vals, bf_times, 'x--', label='Brute Force', color='k', alpha=0.6)
 ax2.set_title('Time vs Number of Cities')
 ax2.set_xlabel('Number of Cities')
@@ -531,6 +820,6 @@ ax2.set_yscale('log')
 ax2.legend()
 ax2.grid(True)
 
-plot_filename = f"tsp_results_{timestamp}.png"
+plot_filename = os.path.join(output_dir, f"tsp_results_{timestamp}.png")
 plt.savefig(plot_filename)
 print(f"Plot saved to {plot_filename}")
