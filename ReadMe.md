@@ -34,18 +34,24 @@ This is the core algorithm from the referenced paper. It operates in three phase
 ### 2. Refined SPSA
 A variation of the SPSA optimizer that incorporates **Momentum**. This helps the optimizer navigate the cost landscape more effectively, avoiding shallow local minima and converging faster in some scenarios.
 
-### 3. Monte Carlo (MLX Accelerated)
+### 3. Decomposition (Divide & Conquer)
+A scalable approach for larger datasets ($N \ge 50$) that breaks the problem into smaller, manageable sub-problems.
+*   **Phase 1 (Decomposition):** Clusters cities into $K$ groups using K-Means clustering.
+*   **Phase 2 (Conquer):** Solves the TSP for the cluster centroids to determine the global order, then solves the local TSP for each cluster using Refined SPSA.
+*   **Phase 3 (Stitching):** Combines the local tours into a single global tour based on the centroid path.
+
+### 4. Monte Carlo (MLX Accelerated)
 A probabilistic approach that samples millions of random permutations to approximate the optimal solution.
 *   **Implementation:** Uses `mlx.core` to generate and evaluate batches of permutations in parallel on the GPU.
 *   **Scale:** Can evaluate hundreds of millions of paths in seconds, providing a strong baseline for larger N where exact methods fail.
 
-### 4. Held-Karp (MLX Accelerated)
+### 5. Held-Karp (MLX Accelerated)
 An exact algorithm for TSP based on Dynamic Programming.
 *   **Complexity:** $O(n^2 2^n)$.
 *   **Implementation:** Vectorized using `mlx.core` to perform state updates in parallel on the GPU.
 *   **Limitation:** Due to exponential memory usage, it is feasible only up to $N \approx 18-20$.
 
-### 5. Brute Force
+### 6. Brute Force
 The naive exact approach that evaluates all $(N-1)!$ possible permutations.
 *   **Implementation:** Uses Python's `itertools`.
 *   **Limitation:** Feasible only for very small $N$ ($N < 13$).
@@ -53,6 +59,8 @@ The naive exact approach that evaluates all $(N-1)!$ possible permutations.
 ## Project Structure
 
 *   **`2spsa.py`**: The main execution script. It runs a comprehensive benchmark suite across various problem sizes (from 4 to 100 cities), executing the algorithms described above and exporting results.
+*   **`decomposition.py`**: Implements the Divide & Conquer strategy, utilizing K-Means clustering to decompose the TSP into smaller sub-problems solved via SPSA.
+*   **`held-karp.py`**: Contains the exact Held-Karp dynamic programming solver, optimized with MLX for GPU acceleration on Apple Silicon.
 *   **`bruteforce_mlx.py`**: A standalone script demonstrating the MLX-based vectorized logic for batch distance calculations used in the Monte Carlo solver.
 *   **`results/`**: Directory where the benchmark outputs are stored.
     *   `tsp_results_YYYYMMDD_HHMMSS.txt`: Detailed text report of the run.
