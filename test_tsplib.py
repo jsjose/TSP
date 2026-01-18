@@ -104,7 +104,8 @@ def run_benchmark():
         print("  > Running OR-Tools...")
         start = time.time()
         ort_solver = ORToolsTSPSolver(instance.distance_matrix)
-        _, ort_cost = ort_solver.solve(time_limit_seconds=5)
+        or_time_limit = max(5, int(instance.dimension / 5))
+        _, ort_cost = ort_solver.solve(time_limit_seconds=or_time_limit)
         res["ort_time"] = time.time() - start
         res["ort_cost"] = ort_cost
         res["ort_gap"] = calculate_gap(ort_cost, instance.optimal_cost)
