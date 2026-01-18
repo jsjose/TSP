@@ -1,93 +1,30 @@
-# Solving The Travelling Salesman Problem Using A Single Qubit
+# TSP Solvers
 
-This paper, ["Solving The Travelling Salesman Problem Using A Single Qubit" (arXiv:2407.17207)](https://arxiv.org/pdf/2407.17207), presents a fascinating "quantum-inspired" approach. It maps the TSP into a Discrete Brachistochrone problem and solves it using a single qubit by encoding the cities and their distances as states on the Bloch Sphere.
+This project implements and compares different algorithms for solving the Traveling Salesperson Problem (TSP).
 
-The core idea is to use the qubit's ability to exist in a superposition to "traverse" multiple paths simultaneously. We then use an optimizer (SPSA) to tune the rotation parameters so the system collapses into the state representing the shortest path.
+## Algorithms
 
-## Implementation Plan
+The following algorithms are implemented:
 
-1.  **Data Encoding:**
-    *   **Cities:** Represent each city $c_i$ as a state $|P_{ii}\rangle$ on the equator of the Bloch sphere.
-    *   **Distances:** Encode the distance $s_{ij}$ between city $i$ and $j$ as an angle $\theta_{ij}$ on the geodesic connecting $|P_{ii}\rangle$ to the pole $|0\rangle$.
+*   **SingleQubitTSP**: A TSP solver based on a single qubit.
+*   **two_opt_refinement**: A 2-opt refinement algorithm for improving existing solutions.
+*   **solve_tsp_decomposition**: A TSP solver that uses k-means clustering to decompose the problem into smaller subproblems.
+*   **GeneticTSPSolver**: A genetic algorithm for solving the TSP.
 
-2.  **State Evolution:**
-    *   Construct a "Routing Chart" (layers of states).
-    *   Apply rotation operators ($U^u$ for "upward" to an intermediate distance-state, $U^d$ for "downward" to the next city-state).
+## Changes Made
 
-3.  **Optimization (SPSA):**
-    *   Define a cost function based on the expected distance of the paths.
-    *   Use SPSA (Simultaneous Perturbation Stochastic Approximation) to iteratively update rotation angles to minimize the cost.
+The genetic algorithm in `tsp_ga.py` was giving a large gap from the optimal cost as the number of cities grew. The following changes were made to improve its performance:
 
-4.  **Measurement & Decoding:**
-    *   Perform "tomography" (state measurement) to find the path with the highest probability.
+*   **Improved Population Diversity**: The selection mechanism was modified to select from the entire population instead of the top 50 individuals. This reduces the selection pressure and promotes more diversity in the population, which helps to prevent premature convergence.
+*   **Partially Mapped Crossover (PMX)**: The crossover operator was changed to the Partially Mapped Crossover (PMX), which is a more effective crossover operator for TSP.
+*   **Scramble Mutation**: The mutation operator was changed to the scramble mutation, which is a more effective mutation operator for TSP.
 
-## Algorithms Implemented
+## How to Run
 
-In addition to the paper's method, this repository includes several other algorithms for benchmarking and comparison, leveraging Apple Silicon (MLX) for GPU acceleration where possible.
+To run the comparison script, execute the following command:
 
-### 1. Hybrid SPSA (Paper Implementation)
-This is the core algorithm from the referenced paper. It operates in three phases:
-*   **Phase 1 (1SPSA):** First-order Simultaneous Perturbation Stochastic Approximation for global exploration.
-*   **Phase 2 (2SPSA):** Second-order SPSA (using Hessian approximation) for curvature-based fine-tuning near the minimum.
-*   **Phase 3 (2-Opt):** A classical local search algorithm to untangle any remaining crossing edges in the path.
-
-### 2. Refined SPSA
-A variation of the SPSA optimizer that incorporates **Momentum**. This helps the optimizer navigate the cost landscape more effectively, avoiding shallow local minima and converging faster in some scenarios.
-
-### 3. Decomposition (Divide & Conquer)
-A scalable approach for larger datasets ($N \ge 50$) that breaks the problem into smaller, manageable sub-problems.
-*   **Phase 1 (Decomposition):** Clusters cities into $K$ groups using K-Means clustering.
-*   **Phase 2 (Conquer):** Solves the TSP for the cluster centroids to determine the global order, then solves the local TSP for each cluster using Refined SPSA.
-*   **Phase 3 (Stitching):** Combines the local tours into a single global tour based on the centroid path.
-
-### 4. Monte Carlo (MLX Accelerated)
-A probabilistic approach that samples millions of random permutations to approximate the optimal solution.
-*   **Implementation:** Uses `mlx.core` to generate and evaluate batches of permutations in parallel on the GPU.
-*   **Scale:** Can evaluate hundreds of millions of paths in seconds, providing a strong baseline for larger N where exact methods fail.
-
-### 5. Held-Karp (MLX Accelerated)
-An exact algorithm for TSP based on Dynamic Programming.
-*   **Complexity:** $O(n^2 2^n)$.
-*   **Implementation:** Vectorized using `mlx.core` to perform state updates in parallel on the GPU.
-*   **Limitation:** Due to exponential memory usage, it is feasible only up to $N \approx 18-20$.
-
-### 6. Brute Force
-The naive exact approach that evaluates all $(N-1)!$ possible permutations.
-*   **Implementation:** Uses Python's `itertools`.
-*   **Limitation:** Feasible only for very small $N$ ($N < 13$).
-
-## Project Structure
-
-*   **`2spsa.py`**: The main execution script. It runs a comprehensive benchmark suite across various problem sizes (from 4 to 100 cities), executing the algorithms described above and exporting results.
-*   **`decomposition.py`**: Implements the Divide & Conquer strategy, utilizing K-Means clustering to decompose the TSP into smaller sub-problems solved via SPSA.
-*   **`held-karp.py`**: Contains the exact Held-Karp dynamic programming solver, optimized with MLX for GPU acceleration on Apple Silicon.
-*   **`bruteforce_mlx.py`**: A standalone script demonstrating the MLX-based vectorized logic for batch distance calculations used in the Monte Carlo solver.
-*   **`results/`**: Directory where the benchmark outputs are stored.
-    *   `tsp_results_YYYYMMDD_HHMMSS.txt`: Detailed text report of the run.
-    *   `tsp_results_YYYYMMDD_HHMMSS.png`: Plots comparing Cost and Time vs. Number of Cities.
-
-## Results
-
-The benchmark compares the "Quantum-Inspired" Hybrid approach against classical exact and approximate methods.
-
-### Example Output Table
-
-```text
-=====================================================================================================================================================================
-TEST CASE            | HYBRID (Cost/Time)   | REFINED (Cost/Time)  | REF+2OPT (Cost/Time) | MONTE CARLO          | HELD KARP            | BRUTE FORCE    
----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-4-City Symmetric     | 80.00 / 0.14s        | 80.00 / 0.19s        | 80.00 / 0.19s        | 80.00 / 0.08s        | 80.00 / 0.16s        | 80.00 / 0.0000s
-5-City Asymmetric    | 34.00 / 0.17s        | 36.00 / 0.22s        | 34.00 / 0.22s        | 34.00 / 0.01s        | 34.00 / 0.02s        | 34.00 / 0.0000s
-8-City Symmetric     | 105.00 / 0.25s       | 107.00 / 0.33s       | 105.00 / 0.33s       | 99.00 / 0.01s        | 99.00 / 0.03s        | 99.00 / 0.0077s
-12-City Random       | 297.25 / 0.41s       | 429.91 / 0.47s       | 297.25 / 0.47s       | 297.25 / 0.05s       | 297.25 / 0.12s       | 297.25 / 88.5304s
-20-City Random       | 386.43 / 1.39s       | 692.19 / 0.77s       | 386.43 / 0.78s       | 386.43 / 0.85s       | Skipped              | Skipped
-50-City Random       | 588.54 / 106.97s     | 2024.38 / 1.91s      | 573.93 / 2.22s       | 590.12 / 5.40s       | Skipped              | Skipped
-=====================================================================================================================================================================
+```bash
+python test_tsplib.py
 ```
 
-### Performance Visualization
-
-The script generates a plot comparing the scalability of the algorithms:
-
-!TSP Results Plot
-*(Note: This image is generated in the `results/` directory after running `2spsa.py`)*
+This will run the different TSP solvers on a sample problem and print a performance summary.
