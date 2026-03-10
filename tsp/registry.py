@@ -37,6 +37,12 @@ def _import_solvers():
         pass
 
     try:
+        from tsp_lkh import LKH3Solver
+        registry["lkh"] = LKH3Solver
+    except ImportError:
+        pass
+
+    try:
         from tsp_held_karp import solve_tsp_held_karp_mlx as _hk
 
         class _HeldKarpWrapper:
@@ -63,6 +69,7 @@ SOLVER_META = {
     "genetic":     {"label": "Genetic Alg",     "max_n": 99},
     "ortools":     {"label": "OR-Tools",        "max_n": None},
     "cplex":       {"label": "CPLEX",           "max_n": 99},
+    "lkh":         {"label": "LKH-3",            "max_n": None},
     "held_karp":   {"label": "Held-Karp",       "max_n": 20},
 }
 

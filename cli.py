@@ -252,7 +252,7 @@ def build_parser():
     p_solve.add_argument(
         "--solver",
         default="ortools",
-        choices=["spsa", "genetic", "ortools", "cplex", "held_karp"],
+        choices=["spsa", "genetic", "ortools", "cplex", "lkh", "held_karp"],
         help="Solver to use (default: ortools)",
     )
     p_solve.add_argument(
@@ -273,7 +273,7 @@ def build_parser():
     p_bench.add_argument(
         "--solvers",
         nargs="+",
-        choices=["spsa", "genetic", "ortools", "cplex", "held_karp"],
+        choices=["spsa", "genetic", "ortools", "cplex", "lkh", "held_karp"],
         default=None,
         metavar="SOLVER",
         help="Solvers to run (default: all eligible for instance size)",

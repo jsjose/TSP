@@ -21,16 +21,9 @@ class LKH3Solver:
         problem.dimension = self.n
         problem.edge_weight_type = 'EXPLICIT'
         problem.edge_weight_format = 'FULL_MATRIX'
-        
-        # Create node coordinates if not available
-        if not hasattr(self, 'coords') or self.coords is None:
-            self.coords = list(range(1, self.n + 1))
 
-        problem.node_coords = {i: [0,0] for i in self.coords} # Dummy coordinates
-        
-        # Flatten the matrix for tsplib95
-        edge_weights = self.B.flatten().tolist()
-        problem.edge_weights = edge_weights
+        # tsplib95 expects edge_weights as a list of rows (list of lists)
+        problem.edge_weights = self.B.astype(int).tolist()
         
         # 2. Write problem to temporary file
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.tsp') as tmp_file:
@@ -41,7 +34,7 @@ class LKH3Solver:
         
         # 3. Execute LKH-3 via wrapper (expects file path)
         try:
-            solution = lkh.solve(tmp_path, runs='10', max_trials='1000')
+            solution = lkh.solve(tmp_path, runs=10, max_trials=1000)
         except Exception as e:
             print(f"LKH execution failed: {e}")
             solution = None
@@ -61,6 +54,6 @@ class LKH3Solver:
             
             # Calculate final cost
             cost = sum(self.B[path[i]][path[i+1]] for i in range(self.n))
-            return path, int(cost), execution_time
-            
-        return None, None, None
+            return path, int(cost)
+
+        return None, None
