@@ -4,6 +4,7 @@ from tsp_spsa import SingleQubitTSP, two_opt_refinement
 from tsp_ga import GeneticTSPSolver
 from tsp_ortools import ORToolsTSPSolver
 from tsp_cplex import CPLEXTSPSolver
+from tsp_lkh import LKH3Solver
 import time
 import numpy as np
 
@@ -123,6 +124,21 @@ def run_benchmark():
             print(f"    > CPLEX failed: {e}")
             res["cplex_cost"] = None
 
+        # --- LKH ---
+        print("  > Running LKH...")
+        start = time.time()
+        try:
+            lkh_solver = LKH3Solver(instance.distance_matrix)
+            _, lkh_cost, lkh_time = lkh_solver.solve()
+            res["lkh_time"] = lkh_time
+            res["lkh_cost"] = lkh_cost
+            res["lkh_gap"] = calculate_gap(lkh_cost, instance.optimal_cost) if lkh_cost is not None else float('nan')
+        except Exception as e:
+            print(f"    > LKH failed: {e}")
+            res["lkh_cost"] = None
+            res["lkh_time"] = None
+            res["lkh_gap"] = None
+
         results_summary.append(res)
 
     # --- Print Summary Table ---
@@ -151,6 +167,10 @@ def run_benchmark():
         # CPLEX
         if res.get('cplex_cost') is not None:
             p_row('', 'CPLEX', res['cplex_cost'], res['cplex_time'], res['cplex_gap'], opt_str)
+
+        # LKH
+        if res.get('lkh_cost') is not None:
+            p_row('', 'LKH', res['lkh_cost'], res['lkh_time'], res['lkh_gap'], opt_str)
 
         # Decomp
         if res['decomp_cost'] is not None:

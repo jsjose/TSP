@@ -97,3 +97,5 @@ urllib3==2.6.0
 wcwidth==0.2.14
 wordcloud==1.9.4
 xgboost==3.1.1
+tsplib95
+lkh
