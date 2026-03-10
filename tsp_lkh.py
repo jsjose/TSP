@@ -1,10 +1,20 @@
-import lkh
+import shutil
 import numpy as np
 import time
 import os
 import tempfile
 
+try:
+    import lkh as _lkh_module
+except ImportError:
+    _lkh_module = None
+
 class LKH3Solver:
+    @staticmethod
+    def is_available():
+        """Return True if the LKH binary and Python package are both present."""
+        return _lkh_module is not None and shutil.which('LKH') is not None
+
     def __init__(self, dist_matrix):
         self.B = np.array(dist_matrix)
         self.n = len(dist_matrix)
@@ -35,10 +45,7 @@ class LKH3Solver:
         
         # 3. Execute LKH-3 via wrapper (expects file path)
         try:
-            solution = lkh.solve(problem_file=tmp_path, runs=10, max_trials=1000)
-        except Exception as e:
-            print(f"LKH execution failed: {e}")
-            solution = None
+            solution = _lkh_module.solve(problem_file=tmp_path, runs=10, max_trials=1000)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
