@@ -1,7 +1,6 @@
 import lkh
 import numpy as np
 import time
-import tsplib95
 import os
 import tempfile
 
@@ -10,25 +9,27 @@ class LKH3Solver:
         self.B = np.array(dist_matrix)
         self.n = len(dist_matrix)
 
+    def _write_tsp_file(self, path):
+        """Write a TSPLIB EXPLICIT FULL_MATRIX problem file."""
+        with open(path, 'w') as f:
+            f.write("NAME: TSP\n")
+            f.write("TYPE: TSP\n")
+            f.write(f"DIMENSION: {self.n}\n")
+            f.write("EDGE_WEIGHT_TYPE: EXPLICIT\n")
+            f.write("EDGE_WEIGHT_FORMAT: FULL_MATRIX\n")
+            f.write("EDGE_WEIGHT_SECTION\n")
+            for row in self.B.astype(int).tolist():
+                f.write(" ".join(str(v) for v in row) + "\n")
+            f.write("EOF\n")
+
     def solve(self):
         """
         Solves TSP using the LKH-3 heuristic via an external process bridge.
         """
-        # 1. Create a tsplib95 problem from the distance matrix
-        problem = tsplib95.models.StandardProblem()
-        problem.name = 'TSP'
-        problem.type = 'TSP'
-        problem.dimension = self.n
-        problem.edge_weight_type = 'EXPLICIT'
-        problem.edge_weight_format = 'FULL_MATRIX'
-
-        # tsplib95 expects edge_weights as a list of rows (list of lists)
-        problem.edge_weights = self.B.astype(int).tolist()
-        
-        # 2. Write problem to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.tsp') as tmp_file:
-            problem.write(tmp_file)
-            tmp_path = tmp_file.name
+        # 1. Write problem to temporary file
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.tsp')
+        os.close(tmp_fd)
+        self._write_tsp_file(tmp_path)
         
         start_time = time.time()
         

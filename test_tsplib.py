@@ -129,8 +129,8 @@ def run_benchmark():
         start = time.time()
         try:
             lkh_solver = LKH3Solver(instance.distance_matrix)
-            _, lkh_cost, lkh_time = lkh_solver.solve()
-            res["lkh_time"] = lkh_time
+            _, lkh_cost = lkh_solver.solve()
+            res["lkh_time"] = time.time() - start
             res["lkh_cost"] = lkh_cost
             res["lkh_gap"] = calculate_gap(lkh_cost, instance.optimal_cost) if lkh_cost is not None else float('nan')
         except Exception as e:
