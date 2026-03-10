@@ -35,7 +35,7 @@ class LKH3Solver:
         
         # 3. Execute LKH-3 via wrapper (expects file path)
         try:
-            solution = lkh.solve(tmp_path, runs=10, max_trials=1000)
+            solution = lkh.solve(problem_file=tmp_path, runs=10, max_trials=1000)
         except Exception as e:
             print(f"LKH execution failed: {e}")
             solution = None
