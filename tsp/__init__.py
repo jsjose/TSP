@@ -2,7 +2,7 @@
 
 Quick-start
 -----------
-    import tsp_loader
+    import lib.tsp_loader as tsp_loader
     from tsp import solve, list_solvers
 
     instance = tsp_loader.load_tsp("tsplib/berlin52.tsp")

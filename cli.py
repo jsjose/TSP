@@ -37,7 +37,7 @@ def _gap(cost, optimal):
 
 def _run_solver(name, cost_matrix, n, **kwargs):
     """Instantiate and run a solver. Returns (path, cost, elapsed_s)."""
-    from tsp_spsa import two_opt_refinement, SingleQubitTSP
+    from lib.tsp_spsa import two_opt_refinement, SingleQubitTSP
     cls = get_solver(name)
     t0 = time.time()
 
@@ -75,7 +75,7 @@ def _print_row(instance, solver_label, cost, elapsed, gap, optimal):
 # ---------------------------------------------------------------------------
 
 def cmd_solve(args):
-    import tsp_loader
+    import lib.tsp_loader as tsp_loader
     solutions_map = tsp_loader.load_solutions_file("tsplib/solutions")
     try:
         instance = tsp_loader.load_tsp(args.tsp_file, solutions_map)
@@ -131,7 +131,7 @@ def cmd_solve(args):
 
 
 def cmd_benchmark(args):
-    import tsp_loader
+    import lib.tsp_loader as tsp_loader
     solutions_map = tsp_loader.load_solutions_file("tsplib/solutions")
     store = ResultStore(args.db) if args.store else None
 

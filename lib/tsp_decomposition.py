@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.cluster import KMeans
-from tsp_spsa import SingleQubitTSP
+from lib.tsp_spsa import SingleQubitTSP
 
 def solve_tsp_decomposition(solver, coords, k=5):
     """

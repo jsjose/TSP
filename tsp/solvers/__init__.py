@@ -3,31 +3,31 @@
 # this package exists so `from tsp.solvers import ORToolsTSPSolver` works.
 
 try:
-    from tsp_spsa import SingleQubitTSP, two_opt_refinement
+    from lib.tsp_spsa import SingleQubitTSP, two_opt_refinement
 except ImportError:
     pass
 
 try:
-    from tsp_ga import GeneticTSPSolver
+    from lib.tsp_ga import GeneticTSPSolver
 except ImportError:
     pass
 
 try:
-    from tsp_ortools import ORToolsTSPSolver
+    from lib.tsp_ortools import ORToolsTSPSolver
 except ImportError:
     pass
 
 try:
-    from tsp_cplex import CPLEXTSPSolver
+    from lib.tsp_cplex import CPLEXTSPSolver
 except ImportError:
     pass
 
 try:
-    from tsp_decomposition import solve_tsp_decomposition
+    from lib.tsp_decomposition import solve_tsp_decomposition
 except ImportError:
     pass
 
 try:
-    from tsp_held_karp import solve_tsp_held_karp_mlx
+    from lib.tsp_held_karp import solve_tsp_held_karp_mlx
 except ImportError:
     pass

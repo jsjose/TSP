@@ -1,10 +1,10 @@
-import tsp_loader
-from tsp_decomposition import solve_tsp_decomposition
-from tsp_spsa import SingleQubitTSP, two_opt_refinement
-from tsp_ga import GeneticTSPSolver
-from tsp_ortools import ORToolsTSPSolver
-from tsp_cplex import CPLEXTSPSolver
-from tsp_lkh import LKH3Solver
+import lib.tsp_loader as tsp_loader
+from lib.tsp_decomposition import solve_tsp_decomposition
+from lib.tsp_spsa import SingleQubitTSP, two_opt_refinement
+from lib.tsp_ga import GeneticTSPSolver
+from lib.tsp_ortools import ORToolsTSPSolver
+from lib.tsp_cplex import CPLEXTSPSolver
+from lib.tsp_lkh import LKH3Solver
 import time
 import numpy as np
 

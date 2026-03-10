@@ -13,37 +13,37 @@ def _import_solvers():
     registry = {}
 
     try:
-        from tsp_spsa import SingleQubitTSP
+        from lib.tsp_spsa import SingleQubitTSP
         registry["spsa"] = SingleQubitTSP
     except ImportError:
         pass
 
     try:
-        from tsp_ga import GeneticTSPSolver
+        from lib.tsp_ga import GeneticTSPSolver
         registry["genetic"] = GeneticTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_ortools import ORToolsTSPSolver
+        from lib.tsp_ortools import ORToolsTSPSolver
         registry["ortools"] = ORToolsTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_cplex import CPLEXTSPSolver
+        from lib.tsp_cplex import CPLEXTSPSolver
         registry["cplex"] = CPLEXTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_lkh import LKH3Solver
+        from lib.tsp_lkh import LKH3Solver
         registry["lkh"] = LKH3Solver
     except ImportError:
         pass
 
     try:
-        from tsp_held_karp import solve_tsp_held_karp_mlx as _hk
+        from lib.tsp_held_karp import solve_tsp_held_karp_mlx as _hk
 
         class _HeldKarpWrapper:
             """Thin wrapper so Held-Karp fits the BaseSolver interface."""

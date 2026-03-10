@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import itertools
 from math import factorial
 import mlx.core as mx
-from tsp_utils import print_progress, calculate_total_distance
-from tsp_montecarlo import solve_tsp_batch
+from lib.tsp_utils import print_progress, calculate_total_distance
+from lib.tsp_montecarlo import solve_tsp_batch
 
 class SingleQubitTSP:
     def __init__(self, cost_matrix):
