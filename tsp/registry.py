@@ -13,37 +13,37 @@ def _import_solvers():
     registry = {}
 
     try:
-        from tsp_spsa import SingleQubitTSP
+        from algorithms.spsa import SingleQubitTSP
         registry["spsa"] = SingleQubitTSP
     except ImportError:
         pass
 
     try:
-        from tsp_ga import GeneticTSPSolver
+        from algorithms.genetic import GeneticTSPSolver
         registry["genetic"] = GeneticTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_ortools import ORToolsTSPSolver
+        from algorithms.ortools import ORToolsTSPSolver
         registry["ortools"] = ORToolsTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_cplex import CPLEXTSPSolver
+        from algorithms.cplex import CPLEXTSPSolver
         registry["cplex"] = CPLEXTSPSolver
     except ImportError:
         pass
 
     try:
-        from tsp_lkh import LKH3Solver
+        from algorithms.lkh import LKH3Solver
         registry["lkh"] = LKH3Solver
     except ImportError:
         pass
 
     try:
-        from tsp_held_karp import solve_tsp_held_karp_mlx as _hk
+        from algorithms.held_karp import solve_tsp_held_karp_mlx as _hk
 
         class _HeldKarpWrapper:
             """Thin wrapper so Held-Karp fits the BaseSolver interface."""
@@ -53,7 +53,8 @@ def _import_solvers():
                 self.n = len(cost_matrix)
 
             def solve(self):
-                cost, path = _hk(self.B)
+                # held_karp returns (path, cost) — standardized order
+                path, cost = _hk(self.B)
                 return path, cost
 
         registry["held_karp"] = _HeldKarpWrapper

@@ -6,32 +6,32 @@ A research/benchmarking project implementing and comparing multiple algorithms f
 
 | Solver | Module | Type |
 |---|---|---|
-| `SingleQubitTSP` | `tsp_spsa.py` | Quantum-inspired heuristic (SPSA) |
-| `GeneticTSPSolver` | `tsp_ga.py` | Evolutionary algorithm (PMX + scramble mutation) |
-| `ORToolsTSPSolver` | `tsp_ortools.py` | Guided Local Search (Google OR-Tools) |
-| `CPLEXTSPSolver` | `tsp_cplex.py` | Exact ILP (IBM CPLEX, MTZ formulation) |
-| `solve_tsp_decomposition` | `tsp_decomposition.py` | Divide-and-conquer (k-means clustering) |
-| Held-Karp | `tsp_held_karp.py` | Exact DP — O(n² × 2ⁿ), small instances only |
+| `SingleQubitTSP` | `algorithms/spsa.py` | Quantum-inspired heuristic (SPSA) |
+| `GeneticTSPSolver` | `algorithms/genetic.py` | Evolutionary algorithm (PMX + scramble mutation) |
+| `ORToolsTSPSolver` | `algorithms/ortools.py` | Guided Local Search (Google OR-Tools) |
+| `CPLEXTSPSolver` | `algorithms/cplex.py` | Exact ILP (IBM CPLEX, MTZ formulation) |
+| `solve_tsp_decomposition` | `algorithms/decomposition.py` | Divide-and-conquer (k-means clustering) |
+| Held-Karp | `algorithms/held_karp.py` | Exact DP — O(n² × 2ⁿ), small instances only |
 
-### SingleQubitTSP (`tsp_spsa.py`)
+### SingleQubitTSP (`algorithms/spsa.py`)
 Quantum-inspired heuristic. Each city's preference weights are a softmax over an n×n parameter matrix, optimized by SPSA.
 - `solve_hybrid()` — Phase 1: 1SPSA (global), Phase 2: 2SPSA (curvature), Phase 3: 2-opt
 - `solve_refined()` — Multi-start refined SPSA with 2-opt post-processing
 - `two_opt_refinement(path, matrix)` — Standalone 2-opt local search
 
-### GeneticTSPSolver (`tsp_ga.py`)
+### GeneticTSPSolver (`algorithms/genetic.py`)
 Population-based evolutionary solver.
 - **PMX crossover** — Partially Mapped Crossover for valid permutation offspring
 - **Scramble mutation** — Randomly shuffles a subsequence for diversity
 - Selection draws from the full population (not top-N) to prevent premature convergence
 
-### ORToolsTSPSolver (`tsp_ortools.py`)
+### ORToolsTSPSolver (`algorithms/ortools.py`)
 Wrapper around Google OR-Tools `RoutingModel` with Guided Local Search. Time limits scale with instance size.
 
-### CPLEXTSPSolver (`tsp_cplex.py`)
+### CPLEXTSPSolver (`algorithms/cplex.py`)
 Integer programming via IBM CPLEX using Miller-Tucker-Zemlin (MTZ) subtour elimination. Fastest exact solver for small instances. Requires Python < 3.13 and a valid IBM CPLEX license.
 
-### solve_tsp_decomposition (`tsp_decomposition.py`)
+### solve_tsp_decomposition (`algorithms/decomposition.py`)
 Divide-and-conquer heuristic: splits cities with k-means clustering, solves each cluster with Refined SPSA, then stitches sub-tours via a centroid TSP. Skipped when coordinate data is unavailable.
 
 ## Size-Based Algorithm Selection
@@ -46,6 +46,8 @@ The benchmark applies size thresholds automatically:
 ## How to Run
 
 ```bash
+python main.py
+# or equivalently:
 python test_tsplib.py
 ```
 

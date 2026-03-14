@@ -1,3 +1,12 @@
+"""
+Decomposition demo script.
+
+Visual demonstration of the K-Means decomposition concept using a simple
+Nearest Neighbor heuristic (not SPSA). Educational/reference only.
+
+Run from anywhere:
+    python experiments/decomposition_demo.py
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
@@ -12,13 +21,13 @@ kmeans = KMeans(n_clusters=k, n_init='auto', random_state=42).fit(cities)
 labels = kmeans.labels_
 centroids = kmeans.cluster_centers_
 
-# 3. Conquer Phase: Solve each subproblem
+
+# 3. Conquer Phase: Solve each subproblem using Nearest Neighbor
 def solve_local_tsp(cluster_cities):
-    # For simplicity, we use a Nearest Neighbor heuristic here.
-    # In your project, you would insert your 'solve_hybrid' qubit solver here!
+    """Simple Nearest Neighbor heuristic for a cluster of cities."""
     size = len(cluster_cities)
-    if size <= 1: return list(range(size))
-    
+    if size <= 1:
+        return list(range(size))
     path = [0]
     unvisited = list(range(1, size))
     while unvisited:
@@ -28,24 +37,21 @@ def solve_local_tsp(cluster_cities):
         unvisited.remove(next_idx)
     return path
 
+
 # 4. Stitching Phase: Connect mini-tours based on Centroid proximity
-# Determine the order of clusters by solving a high-level TSP on centroids
 centroid_order = solve_local_tsp(centroids)
 
 full_global_path = []
 for cluster_idx in centroid_order:
     cluster_indices = np.where(labels == cluster_idx)[0]
-    if len(cluster_indices) == 0: continue
-    
-    # Solve local tour for these indices
+    if len(cluster_indices) == 0:
+        continue
     local_cities = cities[cluster_indices]
     local_order = solve_local_tsp(local_cities)
-    
-    # Map local relative indices back to global city indices
     global_local_path = [cluster_indices[i] for i in local_order]
     full_global_path.extend(global_local_path)
 
-full_global_path.append(full_global_path[0]) # Close the loop
+full_global_path.append(full_global_path[0])  # Close the loop
 
 # 5. Visualization
 plt.figure(figsize=(10, 7))
@@ -54,7 +60,6 @@ for i in range(k):
     cluster_pts = cities[labels == i]
     plt.scatter(cluster_pts[:, 0], cluster_pts[:, 1], c=colors[i], label=f'Cluster {i}')
 
-# Draw the global path
 path_coords = cities[full_global_path]
 plt.plot(path_coords[:, 0], path_coords[:, 1], 'k--', alpha=0.5, label='Global Stitched Path')
 plt.title("50-City TSP: Subproblem Decomposition via K-Means")
