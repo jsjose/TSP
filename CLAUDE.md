@@ -4,37 +4,48 @@ This file provides context for AI assistants working in this repository.
 
 ## Project Overview
 
-A research/benchmarking project implementing and comparing multiple algorithms for the **Traveling Salesman Problem (TSP)**. The project is Python-only with a flat module structure. Solvers range from a novel quantum-inspired SPSA approach to classical exact solvers (CPLEX, OR-Tools).
+A research/benchmarking project implementing and comparing multiple algorithms for the **Traveling Salesman Problem (TSP)**. The project is organized as a Python package. Solvers range from a novel quantum-inspired SPSA approach to classical exact solvers (CPLEX, OR-Tools).
 
 ## Repository Structure
 
 ```
-/home/user/TSP/
-├── test_tsplib.py          # Main benchmark runner — entry point for comparisons
-├── main.py                 # Minimal entry point (placeholder)
-├── tsp_loader.py           # TSPLIB file parser; defines TSPInstance dataclass
-├── tsp_spsa.py             # SingleQubitTSP solver + two_opt_refinement()
-├── tsp_ga.py               # GeneticTSPSolver (PMX crossover, scramble mutation)
-├── tsp_ortools.py          # ORToolsTSPSolver (Google OR-Tools wrapper)
-├── tsp_cplex.py            # CPLEXTSPSolver (IBM CPLEX / MTZ formulation)
-├── tsp_decomposition.py    # solve_tsp_decomposition() (k-means + sub-solve)
-├── tsp_held_karp.py        # Held-Karp DP solver with MLX GPU support
-├── tsp_utils.py            # Shared utilities: print_progress, calculate_total_distance
-├── tsp_montecarlo.py       # Batch distance calculation via NumPy vectorization
-├── spsa.py                 # Standalone SPSA research/experimentation script
-├── 2spsa.py                # 2nd-order SPSA research script
-├── Held-Karp.py            # Standalone Held-Karp experimentation script
-├── bruteforce_cuda.py      # CUDA brute-force solver
-├── bruteforce_mlx.py       # MLX (Apple Silicon) brute-force solver
-├── decomposition.py        # Standalone decomposition experimentation script
-├── pyproject.toml          # Project metadata and dependencies
-├── requirements.txt        # Pinned dev dependencies (pytest, torch, etc.)
-├── uv.lock                 # UV lock file
-├── .python-version         # Specifies Python 3.12
-├── ReadMe.md               # Algorithm descriptions and benchmark results table
-└── tsplib/                 # TSPLIB data files (gitignored, must obtain separately)
-    ├── *.tsp               # Problem instances (burma14, bayg29, att48, …)
-    └── solutions           # Optimal costs in "name : cost" format
+TSP/
+├── algorithms/                 # Production solver package
+│   ├── __init__.py             # Re-exports all public solvers
+│   ├── spsa.py                 # SingleQubitTSP + two_opt_refinement()
+│   ├── genetic.py              # GeneticTSPSolver (PMX crossover, scramble mutation)
+│   ├── ortools.py              # ORToolsTSPSolver (Google OR-Tools wrapper)
+│   ├── cplex.py                # CPLEXTSPSolver (IBM CPLEX / MTZ formulation)
+│   ├── decomposition.py        # solve_tsp_decomposition() (k-means + sub-solve)
+│   ├── held_karp.py            # Held-Karp DP solver with MLX GPU support
+│   ├── montecarlo.py           # Batch distance calculation via NumPy vectorization
+│   └── lkh.py                  # LKH3Solver (Lin-Kernighan-Helsgott wrapper)
+├── utils/                      # Shared utilities package
+│   ├── __init__.py             # Re-exports all utilities
+│   ├── helpers.py              # print_progress, calculate_total_distance, etc.
+│   └── loader.py               # TSPLIB file parser; defines TSPInstance dataclass
+├── experiments/                # Standalone research/experimentation scripts
+│   ├── spsa_standalone.py      # SPSA research script (self-contained)
+│   ├── benchmark_advanced.py   # 2nd-order SPSA benchmarking
+│   ├── held_karp_dev.py        # Held-Karp experimentation
+│   ├── decomposition_demo.py   # K-Means decomposition visualization
+│   ├── bruteforce_cuda.py      # CUDA brute-force solver
+│   └── bruteforce_mlx.py       # MLX (Apple Silicon) brute-force solver
+├── tsp/                        # Legacy solver registry package
+│   ├── registry.py             # Solver registry (maps names → classes)
+│   ├── base.py                 # Base solver interface
+│   └── store.py                # Result storage
+├── test_tsplib.py              # Main benchmark runner
+├── main.py                     # Entry point — calls run_benchmark()
+├── cli.py                      # CLI interface
+├── pyproject.toml              # Project metadata and dependencies
+├── requirements.txt            # Pinned dev dependencies (pytest, torch, etc.)
+├── uv.lock                     # UV lock file
+├── .python-version             # Specifies Python 3.12
+├── ReadMe.md                   # Algorithm descriptions and benchmark results table
+└── tsplib/                     # TSPLIB data files (gitignored, must obtain separately)
+    ├── *.tsp                   # Problem instances (burma14, bayg29, att48, …)
+    └── solutions               # Optimal costs in "name : cost" format
 ```
 
 ## Environment Setup
@@ -66,6 +77,8 @@ pip install -r requirements.txt
 ## Running the Benchmark
 
 ```bash
+python main.py
+# or equivalently:
 python test_tsplib.py
 ```
 
@@ -73,7 +86,7 @@ This runs all solvers against standard TSPLIB instances and prints a results tab
 
 ## Key Algorithms
 
-### 1. SingleQubitTSP (`tsp_spsa.py`)
+### 1. SingleQubitTSP (`algorithms/spsa.py`)
 Quantum-inspired heuristic. Each city's "preference weights" are a softmax over an n×n parameter matrix, optimized by SPSA.
 - `solve_hybrid()` — Phase 1: 1SPSA (global), Phase 2: 2SPSA (curvature), Phase 3: 2-opt
 - `solve_refined()` — Multi-start refined SPSA
@@ -81,36 +94,40 @@ Quantum-inspired heuristic. Each city's "preference weights" are a softmax over 
 - Distance matrix stored as `self.B`; normalized version as `self.normalized_B`
 - Greedy decoding in `decode_path()` ensures valid Hamiltonian cycle
 
-### 2. GeneticTSPSolver (`tsp_ga.py`)
+### 2. GeneticTSPSolver (`algorithms/genetic.py`)
 Population-based evolutionary solver.
 - Partially Mapped Crossover (PMX) for valid permutation offspring
 - Scramble mutation for diversity
 - Selection from full population (not top-50) to reduce premature convergence
 
-### 3. ORToolsTSPSolver (`tsp_ortools.py`)
+### 3. ORToolsTSPSolver (`algorithms/ortools.py`)
 Wrapper around Google OR-Tools `RoutingModel`.
 - Uses Guided Local Search metaheuristic
 - Configurable time limits (longer for large instances)
 
-### 4. CPLEXTSPSolver (`tsp_cplex.py`)
+### 4. CPLEXTSPSolver (`algorithms/cplex.py`)
 Integer programming via IBM CPLEX.
 - Miller-Tucker-Zemlin (MTZ) subtour elimination constraints
 - Binary edge variables + sequence variables
 - Fastest exact solver for small instances (< 0.1s on burma14)
 
-### 5. solve_tsp_decomposition (`tsp_decomposition.py`)
+### 5. solve_tsp_decomposition (`algorithms/decomposition.py`)
 Divide-and-conquer heuristic.
 - k-means clustering splits cities into sub-clusters
 - Solves each cluster with Refined SPSA
 - Stitches solutions via centroid TSP
 - Requires coordinate data (`coords`); skipped when unavailable
 
-### 6. Held-Karp (`tsp_held_karp.py`)
+### 6. Held-Karp (`algorithms/held_karp.py`)
 Exact DP solver: O(n² × 2ⁿ). Only practical for very small instances.
+- `solve_tsp_held_karp_mlx()` — Apple Silicon MLX GPU version
+- `solve_tsp_held_karp_cpu()` — Pure NumPy CPU version
 
-## Data Loading (`tsp_loader.py`)
+## Data Loading (`utils/loader.py`)
 
 ```python
+import utils.loader as tsp_loader
+
 solutions_map = tsp_loader.load_solutions_file("tsplib/solutions")
 instance = tsp_loader.load_tsp("tsplib/berlin52.tsp", solutions_map)
 # instance.name, instance.dimension, instance.distance_matrix, instance.optimal_cost, instance.coords
@@ -138,11 +155,16 @@ When adding a new solver, follow this same pattern in `test_tsplib.py`.
 - **Distance matrix:** conventionally stored as `self.B` (academic convention)
 - **Problem size:** stored as `self.n`
 
+### Return Interface
+All public solver methods return `tuple[list[int], float]` → `(path, cost)`:
+- `path` — list of city indices starting and ending at 0, e.g. `[0, 3, 1, 4, 2, 0]`
+- `cost` — total tour distance as a float
+
 ### Class Pattern
 Every solver class follows this structure:
 ```python
 class MySolver:
-    def __init__(self, cost_matrix):
+    def __init__(self, cost_matrix: np.ndarray):
         self.B = np.array(cost_matrix)
         self.n = len(cost_matrix)
         # ... setup
@@ -151,8 +173,6 @@ class MySolver:
         # Returns (path, cost) where path is list of city indices
         ...
 ```
-
-Paths are represented as lists of integer city indices starting and ending at 0: `[0, 3, 1, 4, 2, 0]`.
 
 ### Docstrings
 Use Google-style docstrings with Args/Returns sections for public methods.
@@ -167,13 +187,38 @@ except ImportError:
 ```
 
 ### Shared Utilities
-- `tsp_utils.print_progress(...)` — progress bar output
-- `tsp_utils.calculate_total_distance(path, matrix)` — computes tour cost
+- `utils.helpers.print_progress(...)` — progress bar output
+- `utils.helpers.calculate_total_distance(path, matrix)` — computes tour cost
 
-## File Naming Convention
-- Production solver modules: `tsp_<name>.py`
-- Standalone research/experimentation scripts: bare name (`spsa.py`, `2spsa.py`, `decomposition.py`, `Held-Karp.py`)
-- Do not rename experimentation scripts to `tsp_` prefix — that implies production integration
+### Import Conventions
+- **Within `algorithms/`**: relative imports → `from .montecarlo import solve_tsp_batch`
+- **Cross-package**: absolute from root → `from utils.helpers import calculate_total_distance`
+- **In `experiments/`**: add `sys.path.insert(0, '..')` at the top of each script
+
+## Package Structure
+
+```python
+# algorithms/__init__.py re-exports all solvers:
+from algorithms import (
+    SingleQubitTSP,
+    two_opt_refinement,
+    GeneticTSPSolver,
+    ORToolsTSPSolver,
+    CPLEXTSPSolver,
+    solve_tsp_decomposition,
+    solve_tsp_held_karp_mlx,
+    solve_tsp_held_karp_cpu,
+)
+
+# utils/__init__.py re-exports all utilities:
+from utils import (
+    load_tsp,
+    load_solutions_file,
+    TSPInstance,
+    calculate_total_distance,
+    print_progress,
+)
+```
 
 ## TSPLIB Data (gitignored)
 
@@ -201,10 +246,12 @@ CPLEX requires Python < 3.13 and a valid IBM CPLEX license.
 
 ## Adding a New Solver
 
-1. Create `tsp_<algorithm>.py` with a class following the solver pattern above
-2. Import it in `test_tsplib.py`
-3. Add a benchmark block inside `run_benchmark()` respecting the size threshold pattern
-4. Update the results table in `ReadMe.md`
+1. Create `algorithms/<algorithm>.py` with a class following the solver pattern above
+2. Add a re-export line in `algorithms/__init__.py`
+3. Import it in `test_tsplib.py`
+4. Add a benchmark block inside `run_benchmark()` respecting the size threshold pattern
+5. Register it in `tsp/registry.py` if CLI support is needed
+6. Update the results table in `ReadMe.md`
 
 ## Git Workflow
 
