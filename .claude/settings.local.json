@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile utils/helpers.py utils/loader.py utils/__init__.py)",
+      "Bash(python -m py_compile algorithms/montecarlo.py algorithms/held_karp.py algorithms/genetic.py algorithms/ortools.py algorithms/cplex.py algorithms/decomposition.py)",
+      "Bash(python -m py_compile algorithms/spsa.py algorithms/__init__.py)",
+      "Bash(python -m py_compile test_tsplib.py main.py)",
+      "Bash(python -c \":*)",
+      "Bash(uv run python -m py_compile experiments/spsa_standalone.py experiments/benchmark_advanced.py experiments/held_karp_dev.py experiments/decomposition_demo.py experiments/bruteforce_cuda.py experiments/bruteforce_mlx.py)",
+      "Bash(uv run python -m py_compile cli.py tsp/registry.py tsp/base.py tsp/store.py tsp/__init__.py algorithms/lkh.py)",
+      "Bash(uv run python -c \":*)"
+    ]
+  }
+}
