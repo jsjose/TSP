@@ -1,6 +1,6 @@
-# CLAUDE.md — TSP Solvers Project
+# CLAUDE.md
 
-This file provides context for AI assistants working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -74,7 +74,9 @@ pip install -r requirements.txt
 | `black` | Code formatter |
 | `pytest` | Test runner |
 
-## Running the Benchmark
+## Common Commands
+
+### Running the Full Benchmark
 
 ```bash
 python main.py
@@ -82,7 +84,42 @@ python main.py
 python test_tsplib.py
 ```
 
-This runs all solvers against standard TSPLIB instances and prints a results table (cost, time, gap % vs. optimal). TSPLIB data files must be present in `tsplib/` (gitignored).
+Runs all solvers against standard TSPLIB instances and prints a results table (cost, time, gap % vs. optimal). TSPLIB data files must be present in `tsplib/` (gitignored).
+
+### CLI: Solve Single Instance
+
+```bash
+tsp-cli solve tsplib/berlin52.tsp --solver ortools
+tsp-cli solve tsplib/att48.tsp --solver spsa --store
+```
+
+Run a single solver on a single instance. Use `--store` to save results to the database.
+
+### CLI: Benchmark Multiple Instances
+
+```bash
+tsp-cli benchmark --instances tsplib/burma14.tsp tsplib/att48.tsp
+tsp-cli benchmark --instances tsplib/berlin52.tsp --solvers ortools genetic --store
+```
+
+Run selected solvers on multiple instances. By default, all eligible solvers run (respecting size thresholds).
+
+### CLI: Query Results
+
+```bash
+tsp-cli results
+tsp-cli results --instance berlin52 --solver ortools --last 5
+```
+
+Query the stored results database. Use `--instance`, `--solver`, and `--last N` to filter.
+
+### Code Formatting
+
+```bash
+black algorithms/ utils/ experiments/ *.py
+```
+
+Format code with Black (pinned version in pyproject.toml). The project does not currently have automated linting.
 
 ## Key Algorithms
 
@@ -122,6 +159,14 @@ Divide-and-conquer heuristic.
 Exact DP solver: O(n² × 2ⁿ). Only practical for very small instances.
 - `solve_tsp_held_karp_mlx()` — Apple Silicon MLX GPU version
 - `solve_tsp_held_karp_cpu()` — Pure NumPy CPU version
+
+### 7. LKH3Solver (`algorithms/lkh.py`)
+
+Lin-Kernighan-Helsgott heuristic wrapper. Requires LKH3 binary installation.
+
+- Wrapper around the external LKH3 solver
+- Provides high-quality solutions for medium to large instances
+- Requires separate LKH3 tool (installed via `pip install lkh`)
 
 ## Data Loading (`utils/loader.py`)
 
