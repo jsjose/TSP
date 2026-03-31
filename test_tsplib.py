@@ -38,6 +38,7 @@ def run_benchmark():
         "tsplib/ali535.tsp",
         "tsplib/dsj1000.tsp",
         "tsplib/brg180.tsp",
+        "tsplib/fl3795.tsp",
     ]
 
     results_summary = []
@@ -117,14 +118,20 @@ def run_benchmark():
             res["ga_gap"] = None
 
         # --- OR-Tools ---
-        print("  > Running OR-Tools...")
-        start = time.time()
-        ort_solver = ORToolsTSPSolver(instance.distance_matrix)
-        or_time_limit = max(5, int(instance.dimension / 5))
-        _, ort_cost = ort_solver.solve(time_limit_seconds=or_time_limit)
-        res["ort_time"] = time.time() - start
-        res["ort_cost"] = ort_cost
-        res["ort_gap"] = calculate_gap(ort_cost, instance.optimal_cost)
+        if instance.dimension <= 1000:
+            print("  > Running OR-Tools...")
+            start = time.time()
+            ort_solver = ORToolsTSPSolver(instance.distance_matrix)
+            or_time_limit = max(5, int(instance.dimension / 5))
+            _, ort_cost = ort_solver.solve(time_limit_seconds=or_time_limit)
+            res["ort_time"] = time.time() - start
+            res["ort_cost"] = ort_cost
+            res["ort_gap"] = calculate_gap(ort_cost, instance.optimal_cost)
+        else:
+            print(f"  > Skipping OR-Tools (N={instance.dimension} > 1000)")
+            res["ort_cost"] = None
+            res["ort_time"] = None
+            res["ort_gap"] = None
 
         # --- CPLEX ---
         print("  > Running CPLEX...")
