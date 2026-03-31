@@ -134,21 +134,27 @@ def run_benchmark():
             res["ort_gap"] = None
 
         # --- CPLEX ---
-        print("  > Running CPLEX...")
-        start = time.time()
-        try:
-            cplex_solver = CPLEXTSPSolver(instance.distance_matrix)
-            _, cplex_cost = cplex_solver.solve(log_output=False)
-            res["cplex_time"] = time.time() - start
-            res["cplex_cost"] = cplex_cost
-            res["cplex_gap"] = (
-                calculate_gap(cplex_cost, instance.optimal_cost)
-                if cplex_cost is not None
-                else float("nan")
-            )
-        except Exception as e:
-            print(f"    > CPLEX failed: {e}")
+        if instance.dimension <= 30:
+            print("  > Running CPLEX...")
+            start = time.time()
+            try:
+                cplex_solver = CPLEXTSPSolver(instance.distance_matrix)
+                _, cplex_cost = cplex_solver.solve(log_output=False)
+                res["cplex_time"] = time.time() - start
+                res["cplex_cost"] = cplex_cost
+                res["cplex_gap"] = (
+                    calculate_gap(cplex_cost, instance.optimal_cost)
+                    if cplex_cost is not None
+                    else float("nan")
+                )
+            except Exception as e:
+                print(f"    > CPLEX failed: {e}")
+                res["cplex_cost"] = None
+        else:
+            print(f"  > Skipping CPLEX (N={instance.dimension} > 30)")
             res["cplex_cost"] = None
+            res["cplex_time"] = None
+            res["cplex_gap"] = None
 
         # --- LKH ---
         if LKH3Solver is None or not LKH3Solver.is_available():
